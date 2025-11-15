@@ -1,0 +1,208 @@
+\documentclass{article}
+\usepackage[a4paper, margin=3cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{derivative}
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{listingsutf8}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\newcommand{\N}{\mathbb N} 
+\newcommand{\Z}{\mathbb Z} 
+\renewcommand{\P}{\mathbb P} 
+\newcommand{\Q}{\mathbb Q} 
+\newcommand{\R}{\mathbb R} 
+\newcommand{\C}{\mathbb C} 
+\newcommand{\F}{\mathbb F}
+
+\newcommand{\bleu}{\color{blue}} 
+\newcommand{\cyan}{\color{cyan}}
+\newcommand{\citron}{\color{lime}} 
+\newcommand{\rouge}{\color{red}}
+\newcommand{\magenta}{\color{magenta}} 
+\newcommand{\olive}{\color{olive}}
+\newcommand{\violet}{\color{violet}}
+
+\theoremstyle{definition} 
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{corollary}[definition]{Corollary}
+\newtheorem{lemma}[definition]{Lemma}
+
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+
+\theoremstyle{plain}
+\newtheorem{example}[definition]{Example}
+
+\tcbset{
+  promptbox/.style={
+    enhanced,
+    colback=blue!5,
+    colframe=blue!60!black,
+    boxrule=0.8pt,
+    arc=3mm,
+    left=6pt,
+    right=6pt,
+    top=6pt,
+    bottom=6pt,
+    fonttitle=\bfseries,
+    title=Prompt,
+  }
+}
+
+\lstdefinestyle{mypython}{
+    language=Python,
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    stringstyle=\color{orange},
+    commentstyle=\color{green!50!black},
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    frame=none
+}
+
+\newtcblisting{pythonbox}{
+  listing only,
+  listing options={style=mypython},
+  colback=gray!10,
+  colframe=blue!50!black,
+  boxrule=0.5pt,
+  arc=3mm,
+  left=5pt,
+  right=5pt,
+  top=5pt,
+  bottom=5pt
+}
+
+\title{TP3 - Accélération de la méthode BEM pour l’équation de Helmholtz 2D : algorithmes de factorisation de rang faible}
+\author{Clément Baillet}
+\date{}
+
+\begin{document}
+\maketitle
+
+Après avoir réalisé notre premier solveur BEM dans le cadre de l'équation d'Helmholtz en 2D, il est maintenant temps de le peaufiner pour améliorer ses performances. L’une des premières stratégies employées consiste à remplacer notre matrice BEM par une matrice de rang faible qui l’approxime, afin de limiter les coûts en temps de calcul et en stockage. Nous étudions et comparons successivement trois méthodes afin d’y parvenir : la méthode de la SVD tronquée, la méthode Adaptative Cross-Approximation (ACA) avec pivotage complet, et enfin la méthode ACA avec pivotage partiel.
+
+\section{SVD tronquée}
+
+L'idée de la méthode de la Singular Value Decomposition (SVD) tronquée est de ne garder que les $r$ plus grandes valeurs singulières de la décomposition, ce qui nous laisse la matrice
+$$ M_r = \displaystyle\sum_{i=1}^{r}U_i\Sigma_{ii}V_i^*.$$
+Pour choisir le bon $r$, nous utilisons le rang numérique $k(\varepsilon)$ : il s'agit du plus petit entier $r$ tel que l'erreur relative entre $M$ et $M_r$ soit inférieure à $\varepsilon$. À noter que l'erreur relative dépend de la norme choisie, il en va de même pour $k(\varepsilon)$. Pour la suite, nous utiliserons la norme de Frobénius $\|M\|^2_F = \sum_{i,j}|M_{i,j}|^2$. Le rang numérique est une manière effective de calculer numériquement le rang d'une matrice, sans passer par la définition exacte du rang en termes de lignes ou colonnes linéairement indépendantes. L'idée repose sur l'élimination des valeurs singulières dont le module est très petit. En faisant cela, on garde le contenu pertinent de la matrice tout en réduisant considérablement son coût mémoire. Par ailleurs, le théorème d’Eckart-Young assure que cette méthode donne la meilleure approximation de rang fixé $r$, et donc à fortiori la meilleure approximation de rang faible.
+
+La figure \ref{fig:testSVD} montre bien le comportement attendu : en donnant une matrice de rang exact $10$ à notre algorithme, on voit qu'à partir du $10$e rang tronqué, l'erreur chute et l'approximation devient excellente (on observe donc le rang numérique, qui coïncide bien avec le rang exact).
+
+\begin{figure}[h]
+  \begin{minipage}[c]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{testSVD}
+    \caption{Tracé de l'erreur d'approximation avec la méthode de la SVD tronquée en fonction du rang de troncature, pour une matrice de rang $10$.}
+    \label{fig:testSVD}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[c]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{testACA}
+    \caption{Tracé de l'erreur d'approximation avec la méthode de l'ACA avec pivotage total en fonction du rang de troncature, pour une matrice de rang $10$.}
+    \label{fig:testACAt}
+  \end{minipage}%
+\end{figure}
+
+Sur le papier, cette méthode est la meilleure. En pratique, malheureusement, elle nécessite d'effectuer une factorisation SVD, ce qui coûte $\mathcal O(r\cdot mn\min(m,n))$ opérations, et nécessite de stocker complètement la matrice. On teste donc une autre méthode pour effectuer une approximation de rang faible.
+
+\section{Méthode de l'ACA avec pivotage total}
+
+Une autre méthode régulièrement utilisée pour effectuer une approximation de rang faible consiste à retirer des produits externes de vecteurs lignes successivement jusqu'à avoir un résidu dont la norme est assez petite : il s'agit de l'Adaptative Cross-Approximation (ACA). Le processus se rapproche de celui du pivot de Gauss (cf. le pseudo-code "Algorithm 1").
+
+\begin{algorithm}
+\caption{Pseudo-code : ACA avec pivotage complet}
+\begin{algorithmic}[1] 
+  \State \textbf{Initialisation :} $\mathbb{R}_0 = A, k = 0$ 
+  \Repeat 
+  \State $k \leftarrow k + 1$ 
+  \State Trouver $(i^*, j^*) = \operatorname{argmax}_{i,j} |\mathbb{R}_{k-1}(i, j)|$ \Comment{Recherche $O(mn)$} 
+  \State $\delta^* = \mathbb{R}_{k-1}(i^*, j^*)$ 
+  \If {$|\delta^*| = 0$} \textbf{break} \EndIf 
+  \State $\mathbf{u}_k = \mathbb{R}_{k-1}(:, j^*) / \delta^*$ 
+  \State $\mathbf{v}_k = \mathbb{R}_{k-1}(i^*, :)$ 
+  \State $\mathbb{R}_k = \mathbb{R}_{k-1} - \mathbf{u}_k \mathbf{v}_k$ \Comment{Mise à jour $O(mn)$} 
+  \Until $\|\mathbb{R}_k\|_F \le \varepsilon \|A\|_F \textbf{ ou } k \ge k_{\max}$ 
+\end{algorithmic}
+\end{algorithm}
+
+Comme le montre la figure \ref{fig:testACAt}, les résultats obtenus sont similaires à ceux de la méthode SVD tronquée. Toutefois, comme indiqué dans le pseudo-code, le principal problème de cette méthode est que les calculs restent coûteux : le calcul de l’argmax coûte $\mathcal O(mn)$, tout comme la mise à jour et le stockage du résidu. On peut donc encore chercher à l’optimiser.
+
+\section{Méthode de l'ACA avec pivotage partiel}
+
+L'idée de l'ACA avec pivotage partiel reprend la trame de l'ACA avec pivotage total, mais en procédant de manière plus astucieuse :
+\begin{itemize}
+  \item Plus de calcul d’argmax sur toute la matrice, mais seulement sur une ligne $i$ prédéfinie.
+  \item Plus de calcul de résidu complet, seulement d'une ligne et d'une colonne, en utilisant la formule $\R_k(i,j) = \mathbb A(i,j) - \sum_{l=1}^k\mathbf u_k(i)\mathbf v_k(j)$.
+  \item Pour retenir quels pivots ont déjà été sélectionnés, on utilise des listes contenant les indices déjà employés.
+  \item Remplacement du critère de convergence par un critère de non-stagnation $\|\mathbf u_k\|\|\mathbf v_k\| \leqslant \varepsilon\|A_k\|_F$, notamment via la formule
+  $$\| \mathbf{A}_k \|_F^2 = \| \mathbf{A}_{k-1} \|_F^2 + 2 \sum_{l=1}^{k-1} \mathbf{u}_k^T \mathbf{u}_l \mathbf{v}_l^T \mathbf{v}_k + \| \mathbf{u}_k \|_2^2 \| \mathbf{v}_k \|_2^2.$$
+\end{itemize}
+
+Pour accélérer le développement, j’ai utilisé l’assistance d’un modèle de langage (Gemini Pro), en lui transmettant le prompt suivant accompagné d’une capture d’écran de l’énoncé du TP décrivant la démarche à suivre :
+\begin{tcolorbox}[promptbox]
+code moi l'aca à pivotage partiel en suivant cette méthode *image du tp*
+\end{tcolorbox}
+\begin{algorithm}
+\caption{Pseudo-code : ACA avec pivotage partiel}
+\begin{algorithmic}[1]
+\State \textbf{Initialisation :} $k = 0, U = [], V = [], \mathcal{I} = \emptyset, \mathcal{J} = \emptyset, \|\tilde{A}_0\|_F^2 = 0$
+\Repeat
+    \State $k \leftarrow k + 1$
+    \State Choisir $i_k \notin \mathcal{I}$
+    \State Calculer la ligne $\tilde{\mathbf{r}}(j) = A(i_k, j) - \sum_{l=1}^{k-1} \mathbf{u}_l(i_k) \mathbf{v}_l(j)$ \quad \textbf{pour} $j \notin \mathcal{J}$
+    \State Trouver $j_k = \operatorname{argmax}_{j \notin \mathcal{J}} |\tilde{\mathbf{r}}(j)|$
+    \State $\delta_k = \tilde{\mathbf{r}}(j_k)$
+    \If {$|\delta_k| < \varepsilon_{\text{pivot}}$} \textbf{break} \EndIf
+    \State Calculer la colonne $\tilde{\mathbf{c}}(i) = A(i, j_k) - \sum_{l=1}^{k-1} \mathbf{u}_l(i) \mathbf{v}_l(j_k)$ \quad \textbf{pour} $i \notin \mathcal{I}$
+    \State $\mathbf{u}_k = \tilde{\mathbf{c}} / \delta_k$
+    \State $\mathbf{v}_k = \tilde{\mathbf{r}}$
+    \State $U \leftarrow U \cup \{\mathbf{u}_k\}, V \leftarrow V \cup \{\mathbf{v}_k\}$
+    \State $\mathcal{I} \leftarrow \mathcal{I} \cup \{i_k\}, \mathcal{J} \leftarrow \mathcal{J} \cup \{j_k\}$
+
+    \State \textcolor{purple}{Calculer $\|\mathbf{u}_k \mathbf{v}_k\|_F^2 = (\mathbf{u}_k^T \mathbf{u}_k) (\mathbf{v}_k \mathbf{v}_k^T)$} \Comment{Norme du nouveau terme}
+    \State \textcolor{purple}{$S = \sum_{l=1}^{k-1} (\mathbf{u}_l^T \mathbf{u}_k) (\mathbf{v}_l \mathbf{v}_k^T)$} \Comment{Termes croisés}
+    \State \textcolor{purple}{$\|\tilde{A}_k\|_F^2 = \|\tilde{A}_{k-1}\|_F^2 + 2 \cdot S + \|\mathbf{u}_k \mathbf{v}_k\|_F^2$} \Comment{Mise à jour de la norme}
+
+\Until \textcolor{purple}{$\|\mathbf{u}_k \mathbf{v}_k\|_F \le \varepsilon \|\tilde{A}_k\|_F \textbf{ ou } k \ge k_{\max}$}
+\State \Return $U, V$
+\end{algorithmic}
+\end{algorithm}
+
+Le code fourni correspond au pseudo-code "Algorithm 2". J’ai vérifié, avec plusieurs exemples de tailles et rangs différents, qu’il produisait bien deux listes $U$ et $V$ contenant les lignes et colonnes qui, une fois recombinées, donnent une matrice de rang faible approximant l’initiale (cf. Figure \ref{fig:testACAp}). La complexité de l’ACA est désormais grandement améliorée, car chaque étape ne dépasse plus $\mathcal O(n)$ ou $\mathcal O(m)$. Si $r$ est le rang final, comme chaque itération $k$ (parmi les $r$) coûte $\mathcal O(k(m+n))$, la complexité totale est :
+$$ \text{Coût total} = \sum_{k=0}^{r-1} \mathcal O(k(m+n)) = \mathcal O(r^2 (m + n)),$$
+ce qui est bien meilleur que le $\mathcal O(r\cdot mn)$ de l’ACA avec pivotage total, et encore meilleur que la SVD tronquée en $\mathcal O(r\cdot mn\min(m,n))$. De plus, à aucun moment on ne calcule la matrice complète, ce qui réduit considérablement la complexité spatiale.
+
+\begin{figure}[h]
+  \begin{minipage}[c]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{testACAp}
+    \caption{Test de la méthode de l'ACA à pivotage partiel, pour une matrice $100\times 50$ de rang $20$.}
+    \label{fig:testACAp}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[c]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{testBEM.png}
+    \caption{Test des trois méthodes sur la matrice BEM, de taille $200\times 200$.}
+    \label{fig:testBEM}
+  \end{minipage}%
+\end{figure}
+
+\section{Application à la méthode BEM}
+
+Après avoir vu toutes ces méthodes, une question se pose désormais : peut-on les appliquer telles quelles à notre algorithme BEM ? Malheureusement, la réponse est non, pour une raison très simple : il n’est pas possible d’obtenir une approximation de rang faible satisfaisante de la matrice BEM, celle-ci étant inversible. Par conséquent, chacune des méthodes d’approximation employées finit par reconstruire complètement la matrice, et on ne gagne donc rien par rapport à un stockage direct en mémoire. La figure \ref{fig:testBEM} montre le test effectué sur notre matrice BEM avec chaque méthode : le rang final atteint $200$, ce qui est loin d’un rang faible.
+
+\section*{Conclusion}
+
+Nous avons étudié trois méthodes d’approximation de rang faible appliquées à la méthode BEM pour l’équation de Helmholtz 2D : la SVD tronquée, l’ACA à pivotage total et l’ACA à pivotage partiel. Si la SVD offre la meilleure approximation théorique, les deux variantes d’ACA se distinguent par leur efficacité algorithmique, en particulier la version à pivotage partiel dont la complexité est nettement réduite. Toutefois, l’application à la matrice BEM montre les limites de ces approches : la matrice étant inversible, son rang numérique n’est pas faible, et aucune compression significative n’est obtenue.
+
+\end{document}
