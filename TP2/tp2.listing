@@ -1,0 +1,35 @@
+  def matriceA(N,segments,nodes,G,points,poids):
+    A = np.zeros((N,N),dtype=complex)
+    for ex in segments:
+        i = ex[0]
+        for ey in segments:
+            j = ey[0]
+            if i==j:
+                coeff = -1/(2*np.pi)
+
+                d = lambda x,y,j: np.sqrt((nodes[j][0]-x)**2 +
+                (nodes[j][1]-y)**2)
+                n1,n2 = nodes[(j+1)mod N]
+
+                longueur = d(n1,n2,j)
+
+                f = lambda x,y: coeff*(d(x,y,(j+1)modN)*
+                np.log(d(x,y,(j+1)mod N)) +
+                d(x,y,j)*np.log(d(x,y,j)) - longueur)
+
+                A[i][j] += integrale2D(f,nodes[i],
+                nodes[(i+1)mod N],points,poids)
+                const = 1j/4 + coeff*(np.log(k/2)+np.euler_gamma)
+
+                g = lambda X,Y: integrale2D(lambda x,y: const,nodes[j],
+                nodes[(j+1)mod N],points,poids)
+
+                A[i][j] += integrale2D(g,nodes[i],nodes[(i+1)mod N],
+                points,poids)
+            else:
+                I = lambda X,Y: integrale2D(lambda x,y: G((x,y),(X,Y),k),
+                nodes[i],nodes[(i+1)mod N],points,poids)
+
+                A[i][j] += integrale2D(I,nodes[j],nodes[(j+1)mod N],
+                points,poids)
+    return A

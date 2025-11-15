@@ -1,0 +1,258 @@
+\documentclass{article}
+\usepackage[a4paper, margin=3cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{derivative}
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{listingsutf8}
+\usepackage{graphicx}
+
+\tcbset{
+  promptbox/.style={
+    enhanced,
+    colback=blue!5,
+    colframe=blue!60!black,
+    boxrule=0.8pt,
+    arc=3mm,
+    left=6pt,
+    right=6pt,
+    top=6pt,
+    bottom=6pt,
+    fonttitle=\bfseries,
+    title=Prompt,
+  }
+}
+
+% Style listings pour Python
+\lstdefinestyle{mypython}{
+    language=Python,
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    stringstyle=\color{orange},
+    commentstyle=\color{green!50!black},
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    frame=none
+}
+
+% Boîte pour code Python
+\newtcblisting{pythonbox}{
+  listing only,
+  listing options={style=mypython},
+  colback=gray!10,
+  colframe=blue!50!black,
+  boxrule=0.5pt,
+  arc=3mm,
+  left=5pt,
+  right=5pt,
+  top=5pt,
+  bottom=5pt
+}
+
+\title{TP2 : Equation intégrale pour l’équation de Helmholtz 2D}
+\author{Clément Baillet}
+\date{}
+
+\begin{document}
+\maketitle
+
+Ce TP est la conclusion d'une trilogie dont l'objectif était de mettre en place notre premier solveur BEM (Boundary Element Method), et de l'appliquer à la résolution de l'équation de Helmholtz en 2D. On rappelle le contexte : on considère le cas de la diffraction d’une onde incidente plane, i.e. $ u^{ \text{inc}} = \text{e}^{-\mathbf{ k}\cdot \mathbf{ x}} $, par un disque de rayon a centré en $ 0 $ et de frontière $ \Gamma $. $ \mathbf{ k} $ est le vecteur qui permet de déterminer l’angle d’incidence de l’onde. Le nombre d’onde du problème est donné par $ k = | \mathbf{ k}| $. Le domaine extérieur est noté $\Omega^+$. On approximera $\Gamma$ par un maillage à $N$ noeuds et segments $(e_i)_i$. Durant ce TP, notre but va être de programmer de manière effective le solveur BEM en passant par une formulation variationnelle du problème, et en nous aidant des résultats obtenus dans les TPs précédents pour vérifier nos résultats. Ce TP se divise en 3 étapes: 
+
+\begin{itemize}
+\item Déterminer la formulation variationnelle de notre problème.
+\item Résoudre numériquement ce problème variationnel pour avoir la trace de $ p $ sur notre frontière.
+\item Application de la représentation intégrale que l'on a programmé dans le TP1 pour obtenir le champ dans tout le domaine.
+\end{itemize}
+
+On commence par mettre le problème sous forme variationnelle. On rappelle que le problème initial est :
+
+\begin{center}
+  Trouver $p \in H^{1/2}(\Gamma)$ tel que $\displaystyle\int_{\Gamma}^{} G(\mathbf{x,y})p(\mathbf{y})\text{d}\Gamma(\mathbf{y}) = -u^{\text{inc}}$.
+\end{center}
+
+Prenons donc une fonction test $\tilde{p} \in H^{1/2}(\Gamma)$, on multiplie l'équation par celle-ci, et on intègre pour obtenir :
+
+\begin{center}
+  Trouver $p \in H^{1/2}(\Gamma)$ tel que pour tout $\tilde p \in H^{1/2}(\Gamma)$, $\displaystyle\int_{\Gamma}^{}\int_{\Gamma}^{} G(\mathbf{x,y})p(\mathbf{y})\tilde{p}(\mathbf{x})\text{d}\Gamma(\mathbf{y})\text{d}\Gamma(\mathbf{x}) = -\int_{\Gamma}^{}u^{\text{inc}}(\mathbf{x})\tilde{p}(\mathbf{x})\text{d}\Gamma(\mathbf{x})$.
+\end{center}
+
+Maintenant qu'on a modifié la forme de notre problème, nous allons pouvoir le discrétiser sur notre maillage de $\Gamma$. Tout d'abord, notons que notre solution $p$ est censé être valable pour tout $\tilde{p}$, ce qui signifie qu'en particulier on peut choisir les fonctions indicatrices
+\[ \mathbf{1}_{e_i} \]
+où $e_i$ est un segment du maillage du $\Gamma$. On approxime également $p$ sur chaque segment $e_i$ par sa valeur en le milieu, ce qui nous donne le problème suivant :
+
+\begin{center}
+  Trouver $(p_{e_i})_i\in M_{1,N}(\mathbb{C})$ tel que $\displaystyle\sum_{j\in [\![0,N-1]\!]}^{}p_{e_j}\int_{\Gamma_{e_i}}^{}\int_{\Gamma_{e_j}}^{} G(\mathbf{x,y})\text{d}\Gamma_{e_j}(\mathbf{y})\text{d}\Gamma_{e_i}(\mathbf{x}) = -\int_{\Gamma_{e_i}}^{}u^{\text{inc}}(\mathbf{x})\text{d}\Gamma_{e_i}(\mathbf{x})$.
+\end{center}
+
+On note que résoudre ce problème revient à résoudre le système linéaire
+
+\[\mathbb{A}\mathbf{p} = \mathbf{b} \]
+où 
+\[\mathbb{A} = \left( \int_{\Gamma_{e_i}}^{}\int_{\Gamma_{e_j}}^{} G(\mathbf{x,y})\text{d}\Gamma_{e_j}(\mathbf{y})\text{d}\Gamma_{e_i}(\mathbf{x}) \right)_{i,j} \text{   et   } \mathbf{b} = \left( -\int_{\Gamma_{e_i}}^{}u^{\text{inc}}(\mathbf{x})\text{d}\Gamma_{e_i}(\mathbf{x}) \right)_i.\]
+On fait une première fonction \texttt{secondMembre} qui renvoie $\mathbf b$ en utilisant une approximation de Gauss-Legendre (comme pour le calcul de la représentation intégrale):
+
+\begin{pythonbox}
+  def secondMembre(N,segments,nodes,uInc,points,poids):
+    b = np.zeros(N,dtype=complex)
+    for e in segments:
+        i = e[0]
+        i2 = e[1]
+        n1 = nodes[i]
+        n2 = nodes[i2]
+        b[i] = -integrale2D(lambda x,y:uInc(x,y,k),n1,n2,points,poids)
+    return b
+\end{pythonbox}
+
+Le calcul de $\mathbb A$ est un peu plus délicat. Lorsque l'on est en dehors de la diagonale, il n'y a pas de soucis et on peut appliquer deux fois l'approximation de Gauss-Legendre. Sur la diagonale cependant, il va falloir gérer les singularités de la fonction de Green lorsque $e_i = e_j$. Pour ce faire, on va utiliser un développement asymptotique :
+
+\[G(\mathbf{x,y}) = 
+\frac{1}{2\pi} \ln \frac{1}{\|\mathbf{x} - \mathbf{y}\|} 
++ \frac{i}{4}
+- \frac{1}{2\pi} \bigl[ \ln\!\left(\frac{k}{2}\right) + \gamma \bigr]
++ \mathcal{O}\!\left( \|\mathbf{x} - \mathbf{y}\|^2 \ln \frac{1}{\|\mathbf{x} - \mathbf{y}\|} \right)
+\]
+où $\gamma$ est la constante d'Euler. Nous allons séparer le noyau en une partie singulière (la partie logarithmique) et une partie régulière (tout le reste). 
+La partie régulière s’intègre sans soucis avec une quadrature de Gauss, et la partie singulière s’intègre de manière analytique (cf Figure \ref{geometry}) :
+
+\[
+\int_{\Gamma_e} \! -\frac{1}{2\pi} \ln \|\mathbf{x}_h - \mathbf{y}_h\| \, \text{d}\Gamma(\mathbf y_h)
+= -\frac{1}{2\pi} \Bigl( 
+d^e_{j+1} \cdot \boldsymbol{\tau}_e \, \ln \|d^e_{j+1}\| 
+- d^e_j \cdot \boldsymbol{\tau}_e \, \ln \|d^e_j\| 
+- |\Gamma_e| 
++ d_e(\mathbf{x}_h) \, \Omega 
+\Bigr)
+\tag{1}
+\]
+
+où l’on a utilisé les notations suivantes (cf. Figure \ref{geometry}) :
+\begin{itemize}
+  \item $\boldsymbol{\tau}_e$ est le vecteur tangent unitaire,
+  \item $d_e(\mathbf{x}_h)$ est la distance de $\mathbf{x}_h$ à $\Gamma_e$,
+  \item $\Omega$ est l’angle solide sous lequel $\mathbf{x}_h$ voit $\Gamma_e$, $0 \leq \Omega \leq \pi$.
+\end{itemize}
+
+Comme $\Gamma_e = \Gamma_{e'}$, $\mathbf x_h$ appartient au deux segments, donc $d_e(\mathbf{x}_h) = 0$ de sorte que la formule (1) devient :
+
+\[
+\int_{\Gamma_e} \! -\frac{1}{2\pi} \ln \|\mathbf{x}_h - \mathbf{y}_h\| \, \text{d}\Gamma(\mathbf y_h)
+= -\frac{1}{2\pi} 
+\Bigl(
+d^e_{j+1} \cdot \boldsymbol{\tau}_e \, \ln \|d^e_{j+1}\|
+- d^e_j \cdot \boldsymbol{\tau}_e \, \ln \|d^e_j\|
+- |\Gamma_e|
+\Bigr)
+\tag{2}
+\]
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=6cm]{geometrie}
+\caption{Notations pour l’intégration de la partie logarithmique}
+\label{geometry}
+\end{figure}
+Dans notre cas, comme $\mathbf x_h$ est sur $\Gamma_{e_i} = \Gamma_{e_i}$, on a en particulier 
+$$d^e_{j+1}\cdot \mathbf \tau_e = \|d^e_{j+1}\| \text{  et  } d^e_{j}\cdot \mathbf \tau_e = -\|d^e_{j}\|,$$ donc la formule (2) devient
+
+\[
+\int_{\Gamma_e} \! -\frac{1}{2\pi} \ln \|\mathbf{x}_h - \mathbf{y}_h\| \, \text{d}\Gamma(\mathbf y_h)
+= -\frac{1}{2\pi} 
+\Bigl(
+\|d^e_{j+1}\|\ln \|d^e_{j+1}\|
++ \|d^e_j\|\ln \|d^e_j\|
+- |\Gamma_e|
+\Bigr).
+\tag{2}
+\]
+Maintenant que le problème de la singularité est réglé pour la première intégration, la seconde peut se faire avec Gauss-Legendre comme précédemment (puisque $\lim\limits_{x \to 0} (x \ln(x)) = 0$). Voici le code appliquant tout ce qu'on vient de décrire :
+
+\begin{pythonbox}
+  def matriceA(N,segments,nodes,G,points,poids):
+    A = np.zeros((N,N),dtype=complex)
+    for ex in segments:
+        i = ex[0]
+        for ey in segments:
+            j = ey[0]
+            if i==j:
+                coeff = -1/(2*np.pi)
+
+                d = lambda x,y,j: np.sqrt((nodes[j][0]-x)**2 + 
+                (nodes[j][1]-y)**2)
+                n1,n2 = nodes[(j+1)mod N]
+
+                longueur = d(n1,n2,j)
+
+                f = lambda x,y: coeff*(d(x,y,(j+1)modN)*
+                np.log(d(x,y,(j+1)mod N)) + 
+                d(x,y,j)*np.log(d(x,y,j)) - longueur)
+
+                A[i][j] += integrale2D(f,nodes[i],
+                nodes[(i+1)mod N],points,poids)
+                const = 1j/4 + coeff*(np.log(k/2)+np.euler_gamma)
+
+                g = lambda X,Y: integrale2D(lambda x,y: const,nodes[j],
+                nodes[(j+1)mod N],points,poids)
+
+                A[i][j] += integrale2D(g,nodes[i],nodes[(i+1)mod N],
+                points,poids)
+            else:
+                I = lambda X,Y: integrale2D(lambda x,y: G((x,y),(X,Y),k),
+                nodes[i],nodes[(i+1)mod N],points,poids)
+
+                A[i][j] += integrale2D(I,nodes[j],nodes[(j+1)mod N],
+                points,poids)
+    return A
+\end{pythonbox}
+On peut maintenant résoudre le système afin de déterminer $p$. La manière la plus efficace pour le faire serait d'utiliser une méthode itérative, qui permettrait de manière optimale de trouver la solution en $\mathcal{O}(N^2)$, mais comme la matrice $\mathbb A$ est dense et sans propriété particulière, il est difficile de prouver la convergence d'une telle méthode dans notre cas. On va donc se servir de la fonction \texttt{numpy.linalg.solve}: les calculs se font en $\mathcal{O}(N^3)$. La Figure \ref{fig:p} montre la comparaison entre le vecteur $\mathbf p$ que l'on vient de calculer, et la fonction $p$ calculée analytiquement.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=10cm]{comparaisonP}
+  \caption{tracé des parties réelles et imaginaires de $ p $ pour $ k = 2\pi $, $ N = 200$, $ a = 1.0 $ et $ nb_\text{Gauss}= 2 $}
+  \label{fig:p}
+\end{figure}
+
+On fournit un graphe montrant l'erreur relative maximale commise pour différentes valeurs de $k$, et pour différentes tailles de maillage (cf Figure \ref{fig:erreurP}). On remarque une décroissance de l'erreur lorsque $N$ augmente, ce qui témoigne de la convergence de notre code. Pour ce qui est de sa complexité temporelle, en supposant qu'on utilise une méthode itérative pour résoudre le système. Le calcul de la matrice se fait en $\mathcal{O}(N^2)$ (deux boucles \texttt{for} de longueur $N$ avec uniquement des opérations en temps constant effectuées dans chacune d'elle), et le calcul de $\mathbf b$ se fait en $\mathcal{O}(N)$. Comme la résolution de notre système se fait en $\mathcal{O}(N^3)$, alors la complexité de tout le calcul est finalement de l'ordre de 
+\[\mathcal{O}(N^3).\]
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=9cm]{erreurP}
+  \caption{Erreur relative maximale pour $p$ pour $k$ allant de $\pi/2$ à $ 4\pi $, et pour un nombre de noeuds variant de $ 50 $ à $ 200 $}
+  \label{fig:erreurP}
+\end{figure}
+
+Le calcul numérique de $p$ permet désormais de réutiliser la fonction \texttt{representionIntegrale} de notre TP1. Voici alors la comparaison entre $u^+$ obtenu numériquement grâce au calcul de $p$, et la solution exacte (cf Figure \ref{fig:uplus}):
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=9cm]{uplus}
+  \caption{Tracé des parties réelles et imaginaires de $ u^+ $ pour $ k = 2\pi $, $ N = 200 $, $ a = 1.0 $, $ N_\text{xi} = 100 $ et $ nb_\text{Gauss} = 2 $}
+  \label{fig:uplus}
+\end{figure}
+
+On a également fait le test sur d'autres parties du domaine extérieur et le résultat était tout aussi concluant. On fournit le tracé des erreurs relatives afin de confirmer la convergence de notre solveur (cf Figure \ref{fig:erreurBEM}).
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=9cm]{erreurBEM}
+  \caption{Erreur relative maximale de notre solveur BEM pour $k$ allant de $\pi/2$ à $ 4\pi $, et pour un nombre de noeuds variant de $ 50 $ à $ 200 $}
+  \label{fig:erreurBEM}
+\end{figure}
+
+On rappelle que le complexité temporelle de la représentation intégrale du TP1 était de l'ordre de $\mathcal{O}(N\times N_\text{xi})$. Le temps de calcul dépendra principalement de la taille de la discrétisation du domaine extérieur:
+\[\mathcal{O}(\max(N\times N_\text{xi} \
+\, ; \,N^3)).\]
+
+\section*{Conclusion}
+
+Ce TP marque l’aboutissement de la mise en œuvre complète d’un solveur BEM pour l’équation de Helmholtz en deux dimensions. Après avoir établi la formulation variationnelle du problème, nous avons discrétisé la frontière puis implémenté la résolution numérique du système intégral associé. Une attention particulière a été portée au traitement de la singularité logarithmique du noyau de Green, dont la prise en compte correcte s’est révélée essentielle pour obtenir des résultats précis.
+
+Les comparaisons avec les solutions analytiques montrent une très bonne concordance, et l’erreur relative maximale décroît de manière cohérente avec le raffinement du maillage, attestant de la convergence de la méthode. La complexité temporelle observée, de l’ordre de $\mathcal{O}(N^3)$, est conforme aux attentes pour une implémentation dense du BEM.
+
+Ce travail nous a permis de consolider la compréhension des formulations intégrales et des aspects numériques liés à leur discrétisation. Il ouvre la voie à des extensions possibles, comme l’utilisation de méthodes itératives plus efficaces (de type GMRES ou FMM-BEM) ou l’étude de géométries plus complexes.
+
+\end{document}
