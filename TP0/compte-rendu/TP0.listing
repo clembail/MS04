@@ -1,0 +1,8 @@
+def generate_nodes(N, a):
+    angles = np.linspace(0, 2*np.pi, N, endpoint=False)  # angles uniformes
+    x = a * np.cos(angles)
+    y = a * np.sin(angles)
+    return np.column_stack((x, y))
+
+def generate_segments_indices(N):
+    return [(k, (k+1) mod N) for k in range(N)]

@@ -1,0 +1,95 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{derivative}
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{listingsutf8}
+\usepackage{graphicx}
+
+\tcbset{
+  promptbox/.style={
+    enhanced,
+    colback=blue!5,
+    colframe=blue!60!black,
+    boxrule=0.8pt,
+    arc=3mm,
+    left=6pt,
+    right=6pt,
+    top=6pt,
+    bottom=6pt,
+    fonttitle=\bfseries,
+    title=Prompt,
+  }
+}
+
+% Style listings pour Python
+\lstdefinestyle{mypython}{
+    language=Python,
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    stringstyle=\color{orange},
+    commentstyle=\color{green!50!black},
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    frame=none
+}
+
+% Boîte pour code Python
+\newtcblisting{pythonbox}{
+  listing only,
+  listing options={style=mypython},
+  colback=gray!10,
+  colframe=blue!50!black,
+  boxrule=0.5pt,
+  arc=3mm,
+  left=5pt,
+  right=5pt,
+  top=5pt,
+  bottom=5pt
+}
+
+\title{TP0 : Solution analytique de l'équation de Helmholtz}
+\author{Clément Baillet}
+
+\begin{document}
+\maketitle
+
+Le but de ce TP était de commencer à apprivoiser la mise en oeuvre d'un solveur BEM dans le cadre de l'équation d'Helmholtz en 2D. Nous sommes dans le cas de la diffraction d'une onde incidente plane, i.e. $u^{\text{inc}} = \text{e}^{-i\textbf{k}\cdot\textbf{x}}$, par un disque centré en $0$ et de rayon $a$. Pour ce faire, j'ai commencer par coder un Python un générateur de maillage pour la frontière de ce disque, que nous noterons $\Gamma$ et qui correspond au cercle de centre $0$ et de rayon $a$. Comme je ne savais pas par où commencer, je me suis servi de ChatGPT pour me générer le maillage, en lui fournissant le prompt suivant :
+
+\begin{tcolorbox}[promptbox]
+Comment répondre à la question : "générez un maillage du bord du disque du centre 0 et de rayon a : d'abord les noeuds du maillage puis les extrémités de chaque segment. Quel est le nombre de segments (en fonction du nombre de noeuds du maillage) ?", en sachant que j'aimerais le coder en Python.
+\end{tcolorbox}
+
+Voici le code obtenu en retour :
+
+\begin{pythonbox}
+def generate_nodes(N, a):
+    angles = np.linspace(0, 2*np.pi, N, endpoint=False)  # angles uniformes
+    x = a * np.cos(angles)
+    y = a * np.sin(angles)
+    return np.column_stack((x, y))
+
+def generate_segments_indices(N):
+    return [(k, (k+1) mod N) for k in range(N)]
+\end{pythonbox}
+
+Afin de vérifier le code, je l'ai simplement relu ligne par ligne, afin de voir s'il faisait sens, puis je l'ai exécuté (il y avait également une partie de code généré permettant d'afficher le maillage, mais je ne l'ai pas inclus ici). Le code ayant été relu et le résultat final étant probant, je suis passé à la suite.
+
+L'étape suivante a été de calculer la dérivée normale de la fonction $-u^+ - u^\text{inc}$, que l'on notera $p$. Pour ce faire, il faut rappeler la formule du gradient en coordonnées polaires :
+\[\nabla = \pdv{}{r}\vec{u_r} + \dfrac{1}{r}\pdv{}{\theta}\vec{u_\theta}\]
+où $\vec{u_r}$ et $\vec{u_\theta}$ sont les vecteurs de la base mobile. Une fois ceci en tête, le calcul de la dérivée normale de $p$ sur $\Gamma$ devient direct, puisque $\nabla_{\vec n} = \nabla \cdot \vec{u_r} = \pdv{}{r}$. On trouve donc, en dérivant sous le signe somme (possible en se plaçant sur un anneau compact autour de $\Gamma$) :
+
+\[\nabla_{\vec{n}}p(a,\theta) = \sum_{n\in \mathbb{Z}}\left((-i)^n\frac{J_n(ka)}{H^{(1)}_n(ka)}\underbrace{\odv{}{r}(H^{(1)}_n)(ka)}_{=\frac{k}{2}(H^{(1)}_{n-1}(ka) - H^{(1)}_{n+1}(ka))}\text e^{in\theta}\right) + ik\cos\theta\text e^{-ika\cos\theta}.\]
+
+On la code en Python en se servant du module scipy et en important les fonctions de Bessel et de Hankel du premier ordre, puis en effectuant une boucle for pour calculer les termes successifs de la somme (j'ai démarré la somme à $n=-99$ et l'ai arrêté à $n=99$). Voici le graphe du module de $p$ sur $\Gamma$ en fonction de $\theta$ :
+
+\begin{figure}[h]
+	\centering
+ 	\includegraphics[width=10cm]{module}
+ 	\caption{Module of $p$}
+\end{figure}
+
+\end{document}
