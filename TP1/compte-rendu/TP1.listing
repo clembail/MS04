@@ -1,0 +1,23 @@
+def representationIntegrale(N,points,poids,q,
+			G,segments,nodes,a,k):
+    l = len(q)
+    M = np.zeros((l,N),dtype=complex)
+    V = np.zeros(N,dtype=complex)
+    for e in segments: #calcul des milieux p_e
+        j = e[0]
+        (x,y) = milieu(e,nodes)
+        z = x + 1j*y
+        r = np.abs(z)
+        theta = np.angle(z)
+        V[j] = p(a,r,theta,k)
+    for i in range(l): #calcul de la matrice
+    #contenant les integrales
+        n1 = q[i]
+        for e in segments:
+            j=e[0]
+            j2=e[1]
+            M[i][j] = integrale2D(
+            (lambda X,Y: G(n1,(X,Y),k)),
+            nodes[j],nodes[j2],points,poids)
+    U = np.matmul(M,V)
+    return U
